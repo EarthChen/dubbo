@@ -20,10 +20,18 @@ import org.apache.dubbo.remoting.http12.exception.EncodeException;
 import org.apache.dubbo.remoting.http12.message.HttpMessageEncoder;
 import org.apache.dubbo.remoting.http12.message.MediaType;
 import org.apache.dubbo.rpc.protocol.tri.compressor.Compressor;
+import org.apache.dubbo.rpc.protocol.tri.h12.grpc.GrpcCompositeCodec;
 
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 
+/**
+ * Encoder wrapper that adds compression support.
+ *
+ * <p>For GrpcCompositeCodec, compression is delegated to the codec itself since
+ * gRPC message format requires the compression flag to be written before the
+ * compressed data. For other encoders, the decorator pattern is used.
+ */
 public class CompressibleEncoder implements HttpMessageEncoder {
 
     private final HttpMessageEncoder delegate;
@@ -36,10 +44,20 @@ public class CompressibleEncoder implements HttpMessageEncoder {
 
     public void setCompressor(Compressor compressor) {
         this.compressor = compressor;
+        // GrpcCompositeCodec handles compression internally for proper gRPC frame format
+        if (delegate instanceof GrpcCompositeCodec) {
+            ((GrpcCompositeCodec) delegate).setCompressor(compressor);
+        }
     }
 
     public void encode(OutputStream outputStream, Object data, Charset charset) throws EncodeException {
-        delegate.encode(compressor.decorate(outputStream), data, charset);
+        if (delegate instanceof GrpcCompositeCodec) {
+            // GrpcCompositeCodec already handles compression with proper gRPC frame format
+            delegate.encode(outputStream, data, charset);
+        } else {
+            // For other encoders, use decorator pattern
+            delegate.encode(compressor.decorate(outputStream), data, charset);
+        }
     }
 
     public void encode(OutputStream outputStream, Object[] data, Charset charset) throws EncodeException {
